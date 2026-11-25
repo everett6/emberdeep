@@ -1871,7 +1871,7 @@ async function hostStart(){
   const R=await getRoom();if(!lobby)return;
   if(!R){lobby.msg=roomWhy||'No room connection available.';return}
   if(!meta.chOwn.includes(chr))chr=0;
-  lobby.step='host';lobby.msg='';lobby.code=Array.from({length:4},()=>LET[Math.floor(Math.random()*LET.length)]).join('');
+  lobby.step='host';lobby.msg='';lobby.code=lobby.fixed||Array.from({length:4},()=>LET[Math.floor(Math.random()*LET.length)]).join('');
   const code=lobby.code;
   try{const rm=await room.join('emb-'+code.toLowerCase());if(!lobby||lobby.code!==code)return;lobby.rm=rm;rm.on('g',d=>onMsg(d,'host'))}catch(e){lobby.msg='Could not open a room: '+(e&&e.message||e);lobby.step='pick'}
 }
@@ -1884,7 +1884,7 @@ async function joinStart(){
 }
 function lobbyTick(){
   if(!lobby||lobby.step!=='joining'||!net)return;
-  if(!net.got){if(t%60===0)netSend({t:'join',c:chr});if(t-lobby.t0>780){const rm=net.rm;try{rm.leave()}catch(e){}net=null;lobby.step='join';lobby.msg='No host found with that code. Check the code and that the host is waiting.'}}
+  if(!net.got){if(t%60===0)netSend({t:'join',c:chr});if(t-lobby.t0>780){const rm=net.rm;try{rm.leave()}catch(e){}net=null;lobby.step='join';lobby.msg='No host found with that code. Check the code and that the host is waiting.';if(lobby.auto)setTimeout(()=>{if(lobby&&lobby.step==='join')joinStart()},1500)}}
 }
 function lobbyKey(k,e){
   const l=lobby;if(!l)return;
@@ -2290,6 +2290,11 @@ function loop(ts){
   }
   draw();musicTick();requestAnimationFrame(loop)}
 loop();
+// Link-based start: ?room=ABCD&role=host|guest[&mode=versus] skips the lobby so each player just opens their link.
+(()=>{const q=new URLSearchParams(location.search),code=(q.get('room')||'').toUpperCase(),role=q.get('role');
+  if(!/^[A-Z]{4}$/.test(code)||(role!=='host'&&role!=='guest'))return;
+  openLobby();lobby.fixed=code;lobby.auto=true;lobby.versus=q.get('mode')==='versus';
+  if(role==='host')hostStart();else{lobby.code=code;joinStart()}})();
 })();
 </script>
 </body>
