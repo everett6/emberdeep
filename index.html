@@ -348,7 +348,14 @@ const maceMult=()=>(1+.2*up.dens)*CHAR().mel,mobMult=()=>1+.07*totalUp(),dashDmg
 const CH=id=>id.startsWith('W_')?{name:WN[id.slice(2)],cost:0,desc:WD[id.slice(2)],col:WC[id.slice(2)]}:UPG[id]?{name:UPG[id].name+(UPG[id].max>1?'  Lv '+up[id]+(up[id]<UPG[id].max?' > '+(up[id]+1):' (MAX)'):(up[id]?' (owned)':'')),cost:0,desc:UPG[id].desc,col:UPG[id].col}:CHARMS[id];
 function applyCharms(){P.forEach(q=>{const nm=CHARS[q.chr].hp+(has('heart')?2:0);if(nm>q.max)q.hp+=nm-q.max;q.max=nm;q.hp=Math.min(q.hp,q.max)})}
 const nearTrader=()=>traders.find(tr=>Math.abs(p.x+9-(tr.x+14))<56&&Math.abs(p.y+14-(G*T-14))<40);
-function interact(who=0){p=P[who]||P[0];const tr=nearTrader();ptr.clear();tb={};menu={mode:tr?'shop':'inv',tr,sel:0,msg:'',tab:0,who};state='menu'}
+function interact(who=0){p=P[who]||P[0];const tr=nearTrader();ptr.clear();tb={};menu={mode:tr?'shop':'inv',tr,sel:0,msg:'',tab:0};if(!net)state='menu'}
+// Online the world keeps running while someone shops: the host's menu is `menu`, the guest's is `gmenu`.
+let gmenu=null;
+const inMenu=()=>state==='menu'||!!(net&&menu&&state==='play');
+const shopping=i=>!!net&&(net.role==='host'?!!(i?gmenu:menu):(i===me?!!menu:!!net.peerShop));
+function openGuestShop(){const hp=p;p=P[1];const tr=nearTrader();p=hp;gmenu={mode:tr?'shop':'inv',tr,sel:0,msg:'',tab:0}}
+function withGuest(fn){const hm=menu,hp=p,hs=state;menu=gmenu;p=P[1];fn();gmenu=menu;menu=hm;p=hp;state=hs}
+function closeStaleShops(){const n=(menu?1:0)+(gmenu?1:0);if(!n)return;if(state!=='play'){menu=null;gmenu=null}else{if(menu&&P[0].dead>0)menu=null;if(gmenu&&(P.length<2||P[1].dead>0))gmenu=null}if((menu?1:0)+(gmenu?1:0)<n)saveGame()}
 function closeMenu(){state='play';menu=null;p=P[0];resetPV();saveGame()}
 const WD={s:'Quick slash. S+J in the air = pogo',m:'Smash: speed = damage, launches up, wind bursts',d:'Blindingly fast stabs',w:'Long lash hits a whole line',c:'Thrown ring that flies out and returns',b:'Ranged ember bolt that ignites foes',a:'Piercing arrows, aim up or down',y:'360 sweep, heals every 8 hits',r:'Chain lightning stuns several foes'},WC={s:'#e8fbff',m:'#cfe3f0',d:'#ffe9a8',w:'#d9a56a',c:'#9fe',b:'#ff9a4a',a:'#cfe8a0',y:'#9fffd0',r:'#ffee66'};
 const menuItems=()=>menu.mode==='shop'?menu.tr.stock:(menu.tab===0?weps().map(w=>'W_'+w):[...owned]);
@@ -520,9 +527,10 @@ addEventListener('keydown',e=>{
   if(state==='lobby'){lobbyKey(k,e);return}
   if(k==='o'&&state!=='menu'){mute=!mute;if(!mute)musT=0;say(mute?'Sound off':'Sound on',60);return}
   if(net&&net.role==='guest'){guestKey(k);return}
+  if(net&&menu&&state==='play'){menuKey(k);return}
   if(net&&k==='escape'&&showMap){showMap=false;return}
   if(state==='help'){state='title';return}
-  if(state==='menu'){if(!(menu&&menu.who===1))menuKey(k);return}
+  if(state==='menu'){menuKey(k);return}
   if(state==='play'&&!pvp&&(k==='e'||k==='i'||k==='tab'))interact();
   if(state==='play'&&k==='q')cycleW(0);
   if(state==='play'&&k==='n'&&P.length>1&&!net)cycleW(1);
@@ -556,7 +564,7 @@ cv.addEventListener('pointerdown',e=>{initAudio();if(e.pointerType==='touch')tou
   if(state==='title'){const [mx,my]=cpos(e);titleTap(mx,my);return}
   if(state==='clear'){if(clearT>40)goNext();return}
   if(state==='pause'||state==='map'){state='play';return}
-  if(state==='menu'){const [mx,my]=cpos(e);if(net&&net.role==='guest')netSend({t:'mt',x:mx,y:my});else if(!(menu&&menu.who===1))menuTap(mx,my);return}
+  if(inMenu()){const [mx,my]=cpos(e);if(net&&net.role==='guest')netSend({t:'mt',x:mx,y:my});else menuTap(mx,my);return}
   if(!touchMode)return;
   const [x,y]=cpos(e);const hs=hitB(x,y);if(hs.has('E')){if(net&&net.role==='guest')netSend({t:'ev',e:'shop'});else interact();return}if(hs.has('W')){swapMine();return}
   ptr.set(e.pointerId,hs);refresh();try{cv.setPointerCapture(e.pointerId)}catch(_){}});
@@ -572,7 +580,7 @@ function pollPads(){
     if(g){const b=n=>!!(g.buttons[n]&&g.buttons[n].pressed),ax=g.axes[0]||0,ay=g.axes[1]||0;
       cur.l=ax<-.4||b(14);cur.r=ax>.4||b(15);cur.up=ay<-.55||b(12);cur.down=ay>.55||b(13);cur.jump=b(0);cur.atk=b(2);cur.dash=b(1)||b(5);cur.sp=b(4);cur.spear=b(3);cur.su=b(7)||b(6);cur.start=b(9);cur.sel=b(8);cur.a=b(0);cur.b=b(1);cur.l3=b(10);cur.r3=b(11);
       const e=k=>cur[k]&&!pr[k];
-      if(state==='play'){if(e('start'))fakeKey('p');if(e('sel')&&!pvp)interact(i);if(e('l3'))cycleW(i);if(e('r3')&&i===0)fakeKey('m')}
+      if(state==='play'&&!(i===0&&inMenu())){if(e('start'))fakeKey('p');if(e('sel')&&!pvp){if(!net)interact(i);else if(i===0)fakeKey('e')}if(e('l3'))cycleW(i);if(e('r3')&&i===0)fakeKey('m')}
       else if(i===0||state==='pause'||state==='map'){
         if(e('l'))fakeKey('ArrowLeft');if(e('r'))fakeKey('ArrowRight');if(e('up'))fakeKey('ArrowUp');if(e('down'))fakeKey('ArrowDown');
         if(e('a')||e('start'))fakeKey(state==='pause'?'p':state==='map'?'m':'Enter');if(e('b'))fakeKey('Escape');if(e('sel'))fakeKey('t');
@@ -585,6 +593,7 @@ const held=(...ks)=>ks.some(k=>K[k]);
 const inp=(idx=0)=>{
   const co=P.length>1&&!net;
   const g=PADK[idx]||{};
+  if(net&&net.role==='host'&&shopping(idx))return zeroIn();
   if(idx===1&&net&&net.role==='host')return net.rin;
   if(idx===1)return {l:held('arrowleft')||g.l,r:held('arrowright')||g.r,up:held('arrowup')||g.up,down:held('arrowdown')||g.down,jump:held('arrowup')||g.jump,atk:held('.')||g.atk,dash:held(',')||g.dash,sp:held(';')||g.sp,spear:held('/')||g.spear,su:held("'")||g.su};
   return {l:held('a')||(!co&&held('arrowleft'))||tb.L||g.l,r:held('d')||(!co&&held('arrowright'))||tb.R||g.r,up:held('u')||(!co&&held('arrowup'))||tb.U||g.up,down:held('s')||(!co&&held('arrowdown'))||tb.D||g.down,
@@ -891,7 +900,7 @@ function revive(q){const o=P.find(x=>x!==q&&x.dead===0&&x.hp>0)||q;q.x=o.x;q.y=o
 const PNAME=['Everett','Ethan'];
 function camTargets(){const ms=net?P[net.role==='guest'?me:0]:null;if(!ms)return null;if(ms.dead===0)return [ms];const al=P.filter(q=>q.dead===0);return al.length?al:[ms]}
 function stepPlayers(){
-  P.forEach(q=>{p=q;if(q.dead>0){q.dead--;if(q.dead===0)revive(q);return}updatePlayer()});
+  P.forEach(q=>{p=q;if(shopping(q.idx))q.inv=Math.max(q.inv,2);if(q.dead>0){q.dead--;if(q.dead===0)revive(q);return}updatePlayer()});
   p=P[0];
   if(!net&&P.length>1&&P.every(q=>q.dead===0)){const a=P[0],b=P[1];if(Math.abs(a.x-b.x)>VW*.85||Math.abs(a.y-b.y)>VH*1.1){const tr=a.x<b.x?a:b,ld=tr===a?b:a;tr.x=ld.x-ld.face*22;tr.y=ld.y;tr.vx=tr.vy=0;tr.inv=Math.max(tr.inv,40);burst(tr.x+9,tr.y+14,'#9ef',14,4)}}
 }
@@ -1306,6 +1315,7 @@ function update(){
   t++;pollPads();if(state==='lobby')lobbyTick();if(net)netTick();if(state==='play'&&!pvp)reveal();
   spores.forEach(s=>{s.x+=s.vx+Math.sin(t*.02+s.ph)*.15;s.y+=s.vy;if(s.y<-5){s.y=VH+5;s.x=Math.random()*VW}if(s.x<-5)s.x=VW+5;if(s.x>VW+5)s.x=-5});
   if(net&&net.role==='guest'){gUpdate();return}
+  if(net)closeStaleShops();
   if(state==='clear'){
     clearT++;
     if(clearT%10===0)burst(p.x+9+(Math.random()-.5)*200,p.y-20-Math.random()*80,['#ffd27a','#7ff','#f9c'][clearT%3],12,4);
@@ -1881,7 +1891,7 @@ async function joinStart(){
   const R=await getRoom();if(!lobby)return;if(!R){lobby.msg=roomWhy||'No room connection available.';return}
   const code=lobby.code;lobby.step='joining';lobby.msg='';lobby.t0=t;lobby.sent=0;
   try{const rm=await room.join('emb-'+code.toLowerCase());if(!lobby||lobby.code!==code)return;lobby.rm=rm;
-    net={role:'guest',rm,seq:0,gen:-1,got:false,lm:-1,hb:0,obj:{},gold:0,lastS:Date.now(),pl:null,boss:null,hostMenu:false};rm.on('g',d=>onMsg(d,'guest'));
+    net={role:'guest',rm,seq:0,gen:-1,got:false,lm:-1,hb:0,obj:{},gold:0,lastS:Date.now(),pl:null,boss:null,peerShop:false};rm.on('g',d=>onMsg(d,'guest'));
     netSend({t:'join',c:chr})}catch(e){lobby.msg='Could not join: '+(e&&e.message||e);lobby.step='join'}
 }
 function lobbyTick(){
@@ -1957,10 +1967,10 @@ function startOnline(d){
 function peerLeft(msg){
   if(!net||net.role!=='host')return;
   if(pvp){leaveNet(msg||'Your friend left');return}
-  try{net.rm.leave()}catch(e){}net=null;showMap=false;P=P.slice(0,1);coop=false;say(msg||'Your friend left — playing solo',200);
+  try{net.rm.leave()}catch(e){}if(menu||gmenu)saveGame();menu=null;gmenu=null;net=null;showMap=false;P=P.slice(0,1);coop=false;say(msg||'Your friend left — playing solo',200);
 }
 function leaveNet(msg){
-  const n=net;net=null;showMap=false;
+  const n=net;if(n&&n.role==='host'&&(menu||gmenu))saveGame();menu=null;gmenu=null;net=null;showMap=false;
   if(n&&n.rm){try{n.rm.emit('g',{t:'bye',f:SELF})}catch(e){}try{n.rm.leave()}catch(e){}}
   if(lobby&&lobby.rm&&(!n||lobby.rm!==n.rm)){try{lobby.rm.leave()}catch(e){}}
   lobby=null;if(pvp&&upSave)pvpExit();
@@ -1973,9 +1983,9 @@ function onMsg(d,role){
     if(d.t==='join'){startOnline(d);return}
     if(!net||net.role!=='host'||d.f!==net.peer)return;
     if(d.t==='in'){net.rin=unmask(d.m|0);net.lastIn=Date.now()}
-    else if(d.t==='mk'){if(state==='menu'&&menu&&menu.who===1){p=P[1];menuKey(String(d.k))}}
-    else if(d.t==='mt'){if(state==='menu'&&menu&&menu.who===1){p=P[1];menuTap(+d.x||0,+d.y||0)}}
-    else if(d.t==='ev'){if(d.e==='shop'){if(state==='play'&&!pvp&&P.length>1&&P[1].dead===0)interact(1)}else if(d.e==='sw'&&state==='play'&&P.length>1)cycleW(1);else if(d.e==='go'){if(state==='clear'&&clearT>40)nextLevel();else if(state==='pvpend')pvpAgain()}}
+    else if(d.t==='mk'){if(gmenu&&state==='play')withGuest(()=>menuKey(String(d.k)))}
+    else if(d.t==='mt'){if(gmenu&&state==='play')withGuest(()=>menuTap(+d.x||0,+d.y||0))}
+    else if(d.t==='ev'){if(d.e==='shop'){if(state==='play'&&!pvp&&P.length>1&&P[1].dead===0&&!gmenu)openGuestShop()}else if(d.e==='sw'&&state==='play'&&P.length>1)cycleW(1);else if(d.e==='go'){if(state==='clear'&&clearT>40)nextLevel();else if(state==='pvpend')pvpAgain()}}
     else if(d.t==='bye')peerLeft('Your friend left');
   }else{
     if(!net||net.role!=='guest')return;
@@ -1986,7 +1996,7 @@ function swapMine(){if(net&&net.role==='guest')netSend({t:'ev',e:'sw'});else cyc
 function goNext(){if(net&&net.role==='guest')netSend({t:'ev',e:'go'});else nextLevel()}
 function pvpAgain(){up=upSave||up;equipped=eqSave||equipped;startPvp()}
 function guestKey(k){
-  if(state==='menu'&&menu&&menu.who===1){netSend({t:'mk',k});return}
+  if(menu&&state==='play'){netSend({t:'mk',k});return}
   if(k==='q')swapMine();
   else if(k==='e'||k==='tab'||k==='i')netSend({t:'ev',e:'shop'});
   else if(k==='m')showMap=!showMap;
@@ -2002,14 +2012,14 @@ function netTick(){
   if(net.role==='host'){hostTick();return}
   if(!net.got)return;
   if(Date.now()-net.lastS>9000){leaveNet('Lost connection to the host');return}
-  const m=maskOf(inp(0));if(m!==net.lm||++net.hb>=8){netSend({t:'in',m});net.lm=m;net.hb=0}
+  const m=menu?0:maskOf(inp(0));if(m!==net.lm||++net.hb>=8){netSend({t:'in',m});net.lm=m;net.hb=0}
 }
 function mkSnap(){
   const V=720,inV=o=>P.some(q=>Math.abs(o.x-q.x)<V),id=o=>o.id||(o.id=++uid);
   const S={t:'s',n:++net.seq,st:state==='map'?'play':state,gen:GEN,lv:level,so:seedOff,pv:pvp?1:0,ar:pvpArena,sh:shake,ts:tstop,tx:tsMax,sc:shards,gd:meta.gold,cb:combo,cbT:comboT,
     gt:gateClosed?1:0,up,eq:[...equipped],cl:cps.map(c=>c.lit?1:0),co:chests.map(h=>h.open?1:0),tt:toast.s,tm:toast.t,ct:clearT,lb:lastBoss,bn:bonus,ci:clearInfo,
     pw:pvpWins,ko:pvpKO,pwi:pvpW,hz:pvpHz,ev:EV,
-    mn:state==='menu'&&menu?{w:menu.who|0,m:menu.mode,s:menu.sel,g:menu.msg,t:menu.tab,tn:menu.tr?menu.tr.name:0,ts:menu.tr?menu.tr.stock:0,ow:[...owned]}:0};
+    hs:menu?1:0,mn:gmenu?{m:gmenu.mode,s:gmenu.sel,g:gmenu.msg,t:gmenu.tab,tn:gmenu.tr?gmenu.tr.name:0,ts:gmenu.tr?gmenu.tr.stock:0,ow:[...owned]}:0};
   S.p=P.map(q=>({c:q.chr,x:r1(q.x),y:r1(q.y),vx:r1(q.vx),vy:r1(q.vy),f:q.face,g:q.onGround?1:0,da:q.dash,a:q.atk,am:q.atkMax,ad:q.atkDir,inv:q.inv,st:q.stun,pr:q.parry,hp:q.hp,mx:q.max,dd:q.dead,em:q.ember|0,su:q.sup|0,wp:q.wep,w:q.wpn,vk:q.vk,vM:q.vMax,vw:q.vw,vd:q.vd,ru:r1(q.run),sq:r1(q.sq),sl:q.slam?1:0,sT:q.spT,sF:q.spFlash|0,bu:q.burst,
     tr:q.trail.slice(-6).map(g=>[r1(g.x),r1(g.y),g.face,g.life]),z:q.zap&&q.zap.life>0?{pts:q.zap.pts.map(a=>({x:r1(a.x),y:r1(a.y)})),life:q.zap.life}:0}));
   S.e=enemies.filter(inV).map(e=>[id(e),e.type,r1(e.x),r1(e.y),e.w,e.h,e.flash|0,e.stun|0,e.dir||0,e.elite?1:0,e.gold?1:0]);
@@ -2038,8 +2048,9 @@ function applySnap(S){
   up=S.up;equipped=new Set(S.eq);
   S.p.forEach((d,i)=>{const q=net.pl[i];if(!q)return;q.tx=d.x;q.ty=d.y;q.vx=d.vx;q.vy=d.vy;q.face=d.f;q.onGround=!!d.g;q.dash=d.da;q.atk=d.a;q.atkMax=d.am;q.atkDir=d.ad;q.inv=d.inv;q.stun=d.st;q.parry=d.pr;q.hp=d.hp;q.max=d.mx;q.dead=d.dd;q.ember=d.em;q.sup=d.su;q.wep=d.wp;q.wpn=d.w;q.vk=d.vk;q.vMax=d.vM;q.vw=d.vw;q.vd=d.vd;q.run=d.ru;q.sq=d.sq;q.slam=!!d.sl;q.spT=d.sT;q.spFlash=d.sF;q.burst=d.bu;q.chr=d.c;q.zap=d.z||null;q.trail=d.tr.map(a=>({x:a[0],y:a[1],face:a[2],life:a[3]}))});
   P=net.pl.slice();p=P[me];
-  if(S.st==='menu'&&S.mn&&S.mn.w===1){owned=new Set(S.mn.ow);menu={mode:S.mn.m,tr:S.mn.tn?{name:S.mn.tn,stock:S.mn.ts}:null,sel:S.mn.s,msg:S.mn.g,tab:S.mn.t,who:1};net.hostMenu=false;state='menu'}
-  else{net.hostMenu=S.st==='menu';state=S.st==='menu'?'play':S.st;if(menu&&state!=='menu')menu=null}
+  net.peerShop=!!S.hs;
+  if(S.mn){if(!menu){ptr.clear();tb={}}owned=new Set(S.mn.ow);menu={mode:S.mn.m,tr:S.mn.tn?{name:S.mn.tn,stock:S.mn.ts}:null,sel:S.mn.s,msg:S.mn.g,tab:S.mn.t}}else menu=null;
+  state=S.st;
   enemies=syncObjs('e',S.e,(o,a)=>{o.id=a[0];o.type=a[1];o.tx=a[2];o.ty=a[3];o.w=a[4];o.h=a[5];o.flash=a[6];o.stun=a[7];o.dir=a[8];o.elite=!!a[9];o.gold=!!a[10];o.hp=1;o.vx=0;o.vy=0});
   waves=syncObjs('w',S.w,(o,a)=>{o.id=a[0];o.kind=a[1];o.tx=a[2];o.ty=a[3];o.w=a[4];o.h=a[5];o.vx=a[6];o.vy=a[7];o.delay=a[8];o.dir=a[9];o.life=99});
   chaks=syncObjs('c',S.c,(o,a)=>{o.id=a[0];o.k=a[1];o.tx=a[2];o.ty=a[3];o.vx=a[4];o.vy=a[5];o.out=!!a[6]});
@@ -2069,8 +2080,6 @@ function drawNetTag(){
   const lag=net.role==='guest'?Date.now()-net.lastS:0;
   txt('ONLINE '+(net.role==='host'?'HOST':'GUEST'),14,VH-12,10,lag>1500?'#ff8a7a':'#7fe');
   if(lag>1500)txt('connection lag…',110,VH-12,10,'#ff8a7a');
-  if(net.role==='host'&&state==='menu'&&menu&&menu.who===1){ctx.fillStyle='rgba(0,0,0,.45)';ctx.fillRect(0,VH/2-30,VW,60);txt('Ethan is in the shop / loadout\u2026',VW/2,VH/2+6,18,'#ffd27a','center')}
-  if(net.hostMenu){ctx.fillStyle='rgba(0,0,0,.45)';ctx.fillRect(0,VH/2-30,VW,60);txt('Everett is in the shop / loadout…',VW/2,VH/2+6,18,'#ffd27a','center')}
 }
 function drawMenu(){
   ctx.fillStyle='rgba(2,5,12,.78)';ctx.fillRect(0,0,VW,VH);
@@ -2187,7 +2196,7 @@ function draw(){
   drawShots();
   drawGusts();
   drawChaks();
-  P.forEach(q=>{if(q.dead>0)return;p=q;drawHero();if(net&&PNAME[q.idx]){ctx.save();ctx.font='bold 11px ui-monospace,monospace';ctx.textAlign='center';ctx.fillStyle=q.idx===0?'#ffcf8a':'#8fd8ff';ctx.strokeStyle='rgba(0,0,0,.7)';ctx.lineWidth=3;ctx.strokeText(PNAME[q.idx],q.x+9,q.y-12);ctx.fillText(PNAME[q.idx],q.x+9,q.y-12);ctx.restore()}});p=P[me]||P[0];
+  P.forEach(q=>{if(q.dead>0)return;p=q;drawHero();if(net&&PNAME[q.idx]){ctx.save();ctx.font='bold 11px ui-monospace,monospace';ctx.textAlign='center';ctx.fillStyle=q.idx===0?'#ffcf8a':'#8fd8ff';ctx.strokeStyle='rgba(0,0,0,.7)';ctx.lineWidth=3;const nm=PNAME[q.idx]+(shopping(q.idx)?' (shopping)':'');ctx.strokeText(nm,q.x+9,q.y-12);ctx.fillText(nm,q.x+9,q.y-12);ctx.restore()}});p=P[me]||P[0];
   texts.forEach(q=>{ctx.globalAlpha=Math.min(1,q.life/15);txt(q.s,q.x,q.y,q.size,q.col,'center')});ctx.globalAlpha=1;
   interpOff();ctx.restore();
 
@@ -2260,9 +2269,9 @@ function draw(){
       ctx.globalAlpha=.8;txt(k==='E'&&nearTrader()?'TRADE':lbl[k],bx,by+4,r>30?14:10,'#012','center');ctx.globalAlpha=.28}
     ctx.globalAlpha=1;
   }
-  if(state==='menu'&&!(net&&net.role==='host'&&menu&&menu.who===1))drawMenu();
+  if(menu&&inMenu())drawMenu();
   if(state==='map'||showMap)drawMapOverlay();
-  else if(!pvp&&(state==='play'||state==='pause'))drawMiniMap();
+  else if(!pvp&&!inMenu()&&(state==='play'||state==='pause'))drawMiniMap();
   if(net)drawNetTag();
   if(state==='pause'){ctx.fillStyle='#000a';ctx.fillRect(0,0,VW,VH);txt('PAUSED',VW/2,VH/2,40,'#fff','center');txt('press P or tap to resume'+(rmode?'    Esc: quit run':''),VW/2,VH/2+30,14,'#8ab','center')}
   if(state==='rushend'){ctx.fillStyle='rgba(0,0,0,.82)';ctx.fillRect(0,0,VW,VH);txt(rmode==='rush'?'RUSH OVER':'DAILY OVER',VW/2,150,46,'#ffcf8a','center');txt(rmode==='rush'?rushN+' boss'+(rushN===1?'':'es')+' defeated':'Reached level '+level,VW/2,196,18,'#fff','center');txt('+'+runGold+' gold',VW/2,224,16,'#ffd27a','center');txt('Best: '+(rmode==='rush'?(meta.rush|0)+' bosses':(meta.daily?meta.daily.best:0)+' levels today'),VW/2,250,13,'#9ef','center');if((t>>5)%2===0)txt('press Enter',VW/2,300,14,'#fff','center')}
