@@ -426,8 +426,64 @@ function doBurst(){
   burst(p.x+9,p.y+14,'#ffd27a',30,6);
   if(up.sky>0)startSky();
 }
-
-function maceDmg(){const v=p.atkDir==='d'?Math.max(p.swingV,p.vy):p.swingV;return Math.max(1,Math.round((1.5+.45*v)*maceMult()))}
+function doSpecial(){
+  if(p.spCd>0||p.slam)return false;
+  const c=CHAR();
+  p.spCd=180;
+  if(c.name==='Wick'){ // Ember Burst - radial fire nova
+    p.ember=0;p.burst=26;p.inv=Math.max(p.inv,24);shake=18;freeze=6;sfx.boom();
+    const v=has('vigor')?2:0;
+    const r=ringDamage(160,Math.round((4+v)*maceMult()),Math.round((5+v)*maceMult()),true);
+    const heal=Math.min(3,(r.n>0?1:0)+(r.n>=3?1:0)+(r.bh?1:0));
+    if(heal>0){p.hp=Math.min(p.max,p.hp+heal);ftext(p.x+9,p.y-14,'+'+heal+' ♥','#ff7aa0',15)}
+    burst(p.x+9,p.y+14,'#ff8a4a',40,8);
+    for(let k=0;k<16;k++){const a=k*0.393;parts.push({x:p.x+9+Math.cos(a)*80,y:p.y+14+Math.sin(a)*80,vx:Math.cos(a)*4,vy:Math.sin(a)*4,life:20,col:'#ff8a4a',sz:3})}
+    if(up.sky>0)startSky();
+  }else if(c.name==='Fennel'){ // Shadow Blink - teleport behind nearest foe, dagger fan
+    const cx=p.x+9,cy=p.y+14;
+    let best=null,bd=1e9;
+    enemies.forEach(e=>{const d=Math.hypot(e.x+e.w/2-cx,e.y+e.h/2-cy);if(d<300&&d<bd){bd=d;best=e}});
+    if(boss&&!boss.dying&&!boss.ghost){const d=Math.hypot(boss.x+boss.w/2-cx,boss.y+boss.h/2-cy);if(d<300&&d<bd){bd=d;best=boss}}
+    if(best){
+      const tx=best.x+best.w/2,ty=best.y+best.h/2;
+      const angle=Math.atan2(cy-ty,tx-cx);
+      p.x=tx-Math.cos(angle)*40-9;p.y=ty-Math.sin(angle)*40-14;
+      p.vx=p.vy=0;p.inv=30;sfx.dash();burst(p.x+9,p.y+14,'#ffd27a',20,5);
+      for(let k=0;k<8;k++){const a=angle+k*0.785;chaks.push({o:p,k:'d',x:p.x+9,y:p.y+14,vx:Math.cos(a)*14,vy:Math.sin(a)*14,t:0,hit:new Set(),dead:false})}
+      ftext(p.x+9,p.y-20,'BLINK','#ffd27a',13);
+    }else{say('No foe in range',60);p.spCd=30}
+  }else if(c.name==='Bram'){ // Seismic Slam - ground pound shockwave
+    if(!p.onGround){say('Must be on ground',60);p.spCd=30;return false}
+    p.slam=true;p.vy=0;p.inv=60;shake=24;freeze=8;sfx.boom();sfx.slam();
+    const m=CHAR().mel;
+    const r=ringDamage(180,Math.round(5*m),Math.round(6*m),true);
+    for(let k=0;k<24;k++){const a=k*0.262;parts.push({x:p.x+9+Math.cos(a)*120,y:p.y+28,vx:Math.cos(a)*6,vy:-Math.sin(a)*4,life:24,col:'#ff9ec0',sz:4})}
+    [-1,1].forEach(sd=>gusts.push({x:p.x+9+sd*14-14,y:p.y+p.h-24,w:28,h:24,vx:sd*9,f:sd,life:28,hit:new Set(),dmg:Math.max(1,Math.round(4*m))}));
+    ftext(p.x+9,p.y-14,'SEISMIC SLAM','#ff9ec0',16);
+  }else if(c.name==='Sable'){ // Blade Storm - whirlwind of returning rings
+    p.inv=60;p.spT=40;sfx.sup();
+    for(let k=0;k<5;k++){const a=k*1.257;chaks.push({o:p,x:p.x+9,y:p.y+14,vx:Math.cos(a)*12,vy:Math.sin(a)*12,t:0,hit:new Set(),dead:false,storm:true})}
+    ftext(p.x+9,p.y-20,'BLADE STORM','#9fe',14);
+    for(let k=0;k<20;k++){const a=Math.random()*6.28;parts.push({x:p.x+9+Math.cos(a)*60,y:p.y+14+Math.sin(a)*60,vx:-Math.cos(a)*3,vy:-Math.sin(a)*3,life:18,col:'#9fe',sz:3})}
+  }else if(c.name==='Ione'){ // Meteor Call - rain fire meteors
+    const cx=p.x+9,cy=p.y+14;
+    const targets=enemies.filter(e=>Math.hypot(e.x+e.w/2-cx,e.y+e.h/2-cy)<400);
+    if(boss&&!boss.dying&&!boss.ghost&&Math.hypot(boss.x+boss.w/2-cx,boss.y+boss.h/2-cy)<400)targets.push(boss);
+    if(!targets.length){say('No foes in range',60);p.spCd=30;return false}
+    sfx.boom();shake=16;
+    targets.forEach(tg=>{
+      const tx=tg.x+tg.w/2,ty=tg.y;
+      for(let k=0;k<3;k++){setTimeout(()=>{
+        const mx=tx+(Math.random()-.5)*40;
+        burst(mx,ty-120,'#ff8a4a',12,5);
+        enemies.forEach(e=>{if(Math.hypot(e.x+e.w/2-mx,e.y+e.h/2-ty)<50){foeHit(e,Math.round(2*CHAR().mel),{col:'#ff8a4a',stun:40,em:8});e.burn=Math.max(e.burn||0,120)}});
+        if(boss&&!boss.dying&&!boss.ghost&&Math.hypot(boss.x+boss.w/2-mx,boss.y+boss.h/2-ty)<60){foeHit(boss,Math.round(2*CHAR().mel),{col:'#ff8a4a',bstun:30,em:8});boss.burn=Math.max(boss.burn||0,120)}
+      },k*120)}
+    });
+    ftext(p.x+9,p.y-20,'METEOR CALL','#ff8a4a',14);
+  }
+  return true;
+}
 function maceBox(){
   const cx=p.x+9,R=has('reach')?1.3:1;
   if(p.atkDir==='u')return {x:cx-30,y:p.y-52*R,w:60,h:62*R};
@@ -968,7 +1024,7 @@ function updatePlayer(){
       const c=p.spWin>0?p.spC+1:0;p.spC=c;p.spMax=p.spT=(c===smx-1&&smx>1)?16:12;p.spHit=new Set();p.spWin=0;
       autoFace(200,false);p.vx=p.face*(11+1.5*c);p.vy=Math.min(p.vy,0)*.3;p.inv=Math.max(p.inv,p.spMax+2);sfx.dash();burst(p.x+9,p.y+14,'#ffe08a',14,4);p.spFlash=6;
     }
-    if(sp&&p.ember>=100&&!p.slam)doBurst();
+    if(sp&&!p.slam)doSpecial();
   }
   if(p.dash===0&&!p.slam&&p.spT===0){p.vy=Math.min(13,p.vy+.55)}
   const pvy=p.vy;moveX(p);moveY(p);
@@ -2297,7 +2353,7 @@ function draw(){
     txt('H: controls    T: achievements    O: sound '+(mute?'OFF':'ON')+'    gamepad supported',VW/2,358,11,'#8ab','center');
     txt('Earn gold every level (flawless/fast/combo bonuses) to unlock heroes. Progress saves automatically.'+(saved&&saved.level>1?'  N: new run.':''),VW/2,388,10,'#789','center');
     if(state==='help'){ctx.fillStyle='rgba(0,0,0,.97)';ctx.fillRect(0,0,VW,VH);txt('CONTROLS',VW/2,36,22,'#ffcf8a','center');
-      const L=[['P1 KEYBOARD','#7ff'],['A/D move   W / Space jump   S / U aim down / up','#cdd'],['J attack (sword, then mace)   K spear lunge (chain it)','#cdd'],['C / Shift dash   L ember burst   H TIME STOP super','#cdd'],['Q swap weapon   M map   E loadout & shop   P pause   O sound','#cdd'],
+      const L=[['P1 KEYBOARD','#7ff'],['A/D move   W / Space jump   S / U aim down / up','#cdd'],['J attack (sword, then mace)   K spear lunge (chain it)','#cdd'],['C / Shift dash   L character special   H TIME STOP super','#cdd'],['Q swap weapon   M map   E loadout & shop   P pause   O sound','#cdd'],
         ['P2 KEYBOARD (co-op / versus)','#fb9'],['\u2190/\u2192 move   \u2191 jump   . attack   / spear   , dash   ; burst   \' super','#cdd'],['N swap weapon   Enter shop   (M = map for everyone)','#cdd'],
         ['GAMEPAD (pad 1 = P1, pad 2 = P2)','#bf9'],['Stick / D-pad move   A jump   X attack   Y spear','#cdd'],['B or RB dash   LB burst   RT/LT super   L3 swap   Select shop   Start pause','#cdd'],
         ['TIPS','#c9b6ff'],['Attack just before a hit lands to parry.  Dagger crits stunned or turned-away foes.','#cdd'],['Whip pulls far foes in.  Mace launches only on a downward smash.','#cdd']];
@@ -2370,6 +2426,11 @@ function draw(){
   ctx.fillStyle='#1a1030';ctx.fillRect(16,72,100,6);ctx.fillStyle=p.sup>=100?((t>>3)%2?'#fff':'#c9b6ff'):'#8a6ad0';ctx.fillRect(16,72,p.sup,6);
   ctx.strokeStyle='#fff5';ctx.strokeRect(16.5,72.5,100,6);
   txt(p.sup>=100?'TIME STOP READY (H)':'SUPER',124,79,10,'#c9b6ff');
+  // Special ability cooldown
+  ctx.fillStyle='#1a1030';ctx.fillRect(16,82,100,4);
+  const spReady=p.spCd===0;ctx.fillStyle=spReady?((t>>3)%2?'#fff':'#ffd27a'):'#8a6ad0';ctx.fillRect(16,82,spReady?100:100*(1-p.spCd/180),4);
+  ctx.strokeStyle='#fff5';ctx.strokeRect(16.5,82.5,100,4);
+  txt(spReady?CHAR().name+' SPECIAL (L)':CHAR().name+' SPECIAL',124,87,10,spReady?'#ffd27a':'#c9b6ff');
   if(!pvp)txt('GOLD '+goldNow(),16,96,12,'#ffd84a');
   if(!pvp&&combo>=2){const sc=1+Math.min(.5,combo*.03);txt('x'+combo+' COMBO',16,116,Math.round(13*sc),combo>=10?'#ff9a4a':'#ffd27a');ctx.fillStyle='#fff3';ctx.fillRect(16,120,Math.min(100,comboT/2),3)}
   if(P.length>1){const q=P[1-me];
