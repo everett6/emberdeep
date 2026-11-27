@@ -48,6 +48,14 @@ const META_KEY='emberdeep-meta-v1';
 let meta=(()=>{try{const m=JSON.parse(localStorage.getItem(META_KEY));if(m&&typeof m==='object')return m}catch(e){}return {}})();
 if(meta.gold===undefined)meta.gold=60;meta.gold=meta.gold|0;meta.chOwn=Array.isArray(meta.chOwn)?meta.chOwn:[0];if(!meta.chOwn.includes(0))meta.chOwn.push(0);
 meta.ach=meta.ach||{};meta.tech=meta.tech||{};meta.st=Object.assign({kills:0,bosses:0,best:0,maxLv:0,flawless:0},meta.st||{});meta.c1=meta.c1|0;meta.c2=meta.c2|0;
+
+// ---------- settings ----------
+const DEFAULT_WEP_ORDER=['s','m','d','w','c','b','a','y','r'];
+const DEFAULT_WEP_CYCLE={s:true,m:true,d:true,w:true,c:true,b:true,a:true,y:true,r:true};
+meta.settings=Object.assign({
+  volume:1,mute:false,shake:true,damageNums:true,particles:true,
+  wepOrder:[...DEFAULT_WEP_ORDER],wepCycle:{...DEFAULT_WEP_CYCLE}
+},meta.settings||{});
 function saveMeta(){try{localStorage.setItem(META_KEY,JSON.stringify(meta))}catch(e){}}
 const TECHS=[
  {id:'wall',n:'Wall Kick',hint:'Walls are not always walls...',how:'Hold toward a wall in the air to slide, press Jump to kick off it.'},
@@ -289,6 +297,8 @@ function titleTap(mx,my){
   if(my<40&&mx>VW-170){state='ach';return}
   if(my>=402&&my<438&&Math.abs(mx-VW/2)<120){openLobby();return}
   if(my>345&&my<400){state='help';return}
+  // Settings button on title screen
+  if(mx>=VW-110&&mx<=VW-10&&my>=408&&my<=432){openSettings();return}
   titleStart(false);
 }
 function start(fresh){
@@ -343,7 +353,33 @@ const UPG={
  scy:{name:'Soul Scythe',max:4,base:19,step:8,desc:'Wide 360 sweep. Every 8 hits heal a heart. Lv2+: life steal, wider arc, soul burst',col:'#9fffd0'},
  rod:{name:'Shock Rod',max:4,base:18,step:8,desc:'Chain lightning leaps between foes. Lv1: 2 jumps, 8 dmg. Lv2: 3 jumps, +25% chain dmg. Lv3: 4 jumps, +50% chain dmg, stun. Lv4: 5 jumps, +100% chain dmg, arc stun',col:'#ffee66'},
  sky:{name:'Skybreaker',max:4,base:16,step:8,desc:'L: stun + launch foes, teleport above one and slam. Lv2+: wider stun, multi-slam, meteor impact',col:'#ff7aa0'}};
-const weps=()=>{const b=CHAR().base,mn=up.forge?'m':'s',l=[b==='s'?mn:b];if(!l.includes(mn))l.push(mn);if(up.dag&&!l.includes('d'))l.push('d');if(up.whip&&!l.includes('w'))l.push('w');if(up.chak&&!l.includes('c'))l.push('c');if(up.bow)l.push('a');if(up.scy)l.push('y');if(up.rod)l.push('r');return l};
+const weps=()=>{
+  const b=CHAR().base,mn=up.forge?'m':'s';
+  const base=[b==='s'?mn:b];
+  if(!base.includes(mn))base.push(mn);
+  if(up.dag&&!base.includes('d'))base.push('d');
+  if(up.whip&&!base.includes('w'))base.push('w');
+  if(up.chak&&!base.includes('c'))base.push('c');
+  if(up.bow)base.push('a');
+  if(up.scy)base.push('y');
+  if(up.rod)base.push('r');
+  // Filter by owned weapons and sort by custom order
+  const order=meta.settings.wepOrder||DEFAULT_WEP_ORDER;
+  const cycle=meta.settings.wepCycle||DEFAULT_WEP_CYCLE;
+  return order.filter(w=>base.includes(w)&&cycle[w]);
+};
+const allOwnedWep=()=>{
+  const b=CHAR().base,mn=up.forge?'m':'s';
+  const base=[b==='s'?mn:b];
+  if(!base.includes(mn))base.push(mn);
+  if(up.dag&&!base.includes('d'))base.push('d');
+  if(up.whip&&!base.includes('w'))base.push('w');
+  if(up.chak&&!base.includes('c'))base.push('c');
+  if(up.bow)base.push('a');
+  if(up.scy)base.push('y');
+  if(up.rod)base.push('r');
+  return base;
+};
 const curW=()=>{const w=weps();return w[p.wep%w.length]};
 const WN={s:'SWORD',m:'MACE',d:'DAGGERS',w:'WHIP',c:'CHAKRAM',b:'EMBER BOLT',a:'LONGBOW',y:'SOUL SCYTHE',r:'SHOCK ROD'};
 function cycleW(who){const sp=p;p=P[who||0]||P[0];const w=weps();if(w.length<2)say('Buy more weapons from traders',90);else{p.wep=(p.wep+1)%w.length;say(p.name0+'Weapon: '+WN[curW()],90);sfx.rest()}p=sp}
@@ -354,6 +390,16 @@ const CH=id=>id.startsWith('W_')?{name:WN[id.slice(2)],cost:0,desc:WD[id.slice(2
 function applyCharms(){P.forEach(q=>{const nm=CHARS[q.chr].hp+(has('heart')?2:0);if(nm>q.max)q.hp+=nm-q.max;q.max=nm;q.hp=Math.min(q.hp,q.max)})}
 const nearTrader=()=>traders.find(tr=>Math.abs(p.x+9-(tr.x+14))<56&&Math.abs(p.y+14-(G*T-14))<40);
 function interact(who=0){p=P[who]||P[0];const tr=nearTrader();ptr.clear();tb={};menu={mode:tr?'shop':'inv',tr,sel:0,msg:'',tab:0};if(!net)state='menu'}
+let settingsMenu=null;
+function openSettings(fromPause=false){
+  settingsMenu={mode:'main',sel:0,msg:'',fromPause,subSel:0,wepSel:0};
+  if(!net)state='menu';
+}
+function closeSettings(){
+  if(settingsMenu&&settingsMenu.fromPause){state='pause'}else{state='play'}
+  settingsMenu=null;
+  saveMeta();
+}
 // Online the world keeps running while someone shops: the host's menu is `menu`, the guest's is `gmenu`.
 let gmenu=null;
 const inMenu=()=>state==='menu'||!!(net&&menu&&state==='play');
@@ -399,11 +445,110 @@ function menuKey(k){
   else if(k==='enter'||k===' '||k==='z'){const id=menuItems()[menu.sel];if(id)act(id)}
   else if(k==='escape'||k==='e'||k==='i'||k==='tab'||k==='x')closeMenu();
 }
+function settingsKey(k){
+  if(!settingsMenu)return;
+  const s=settingsMenu;
+  if(s.mode==='main'){
+    const items=['Gameplay','Weapons','Audio','Visual','Close'];
+    if(k==='arrowup'||k==='w')s.sel=Math.max(0,s.sel-1);
+    else if(k==='arrowdown'||k==='s')s.sel=Math.min(items.length-1,s.sel+1);
+    else if(k==='enter'||k===' '||k==='z'){
+      if(s.sel===0)s.mode='gameplay';
+      else if(s.sel===1)s.mode='weapons';
+      else if(s.sel===2)s.mode='audio';
+      else if(s.sel===3)s.mode='visual';
+      else if(s.sel===4)closeSettings();
+      s.subSel=0;s.wepSel=0;
+    }
+    else if(k==='escape'||k==='e'||k==='i'||k==='tab'||k==='x')closeSettings();
+  }else if(s.mode==='gameplay'){
+    const items=['Screen Shake: '+(meta.settings.shake?'ON':'OFF'),'Damage Numbers: '+(meta.settings.damageNums?'ON':'OFF'),'Particles: '+(meta.settings.particles?'ON':'OFF'),'Back'];
+    if(k==='arrowup'||k==='w')s.subSel=Math.max(0,s.subSel-1);
+    else if(k==='arrowdown'||k==='s')s.subSel=Math.min(items.length-1,s.subSel+1);
+    else if(k==='enter'||k===' '||k==='z'||k==='arrowleft'||k==='a'||k==='arrowright'||k==='d'){
+      if(s.subSel===0)meta.settings.shake=!meta.settings.shake;
+      else if(s.subSel===1)meta.settings.damageNums=!meta.settings.damageNums;
+      else if(s.subSel===2)meta.settings.particles=!meta.settings.particles;
+      else if(s.subSel===3)s.mode='main';
+      saveMeta();
+    }
+    else if(k==='escape'||k==='e'||k==='i'||k==='tab'||k==='x')s.mode='main';
+  }else if(s.mode==='audio'){
+    const items=['Master Volume: '+Math.round(meta.settings.volume*100)+'%','Mute: '+(meta.settings.mute?'ON':'OFF'),'Back'];
+    if(k==='arrowup'||k==='w')s.subSel=Math.max(0,s.subSel-1);
+    else if(k==='arrowdown'||k==='s')s.subSel=Math.min(items.length-1,s.subSel+1);
+    else if(k==='arrowleft'||k==='a'){
+      if(s.subSel===0){meta.settings.volume=Math.max(0,meta.settings.volume-.1);if(master)master.gain.value=meta.settings.volume;saveMeta()}
+      else if(s.subSel===1){meta.settings.mute=!meta.settings.mute;saveMeta();say(meta.settings.mute?'Sound off':'Sound on',60)}
+    }
+    else if(k==='arrowright'||k==='d'){
+      if(s.subSel===0){meta.settings.volume=Math.min(1,meta.settings.volume+.1);if(master)master.gain.value=meta.settings.volume;saveMeta()}
+      else if(s.subSel===1){meta.settings.mute=!meta.settings.mute;saveMeta();say(meta.settings.mute?'Sound off':'Sound on',60)}
+    }
+    else if(k==='enter'||k===' '||k==='z'){
+      if(s.subSel===1){meta.settings.mute=!meta.settings.mute;saveMeta();say(meta.settings.mute?'Sound off':'Sound on',60)}
+      else if(s.subSel===2)s.mode='main';
+    }
+    else if(k==='escape'||k==='e'||k==='i'||k==='tab'||k==='x')s.mode='main';
+  }else if(s.mode==='visual'){
+    const items=['Screen Shake: '+(meta.settings.shake?'ON':'OFF'),'Damage Numbers: '+(meta.settings.damageNums?'ON':'OFF'),'Particles: '+(meta.settings.particles?'ON':'OFF'),'Back'];
+    if(k==='arrowup'||k==='w')s.subSel=Math.max(0,s.subSel-1);
+    else if(k==='arrowdown'||k==='s')s.subSel=Math.min(items.length-1,s.subSel+1);
+    else if(k==='enter'||k===' '||k==='z'||k==='arrowleft'||k==='a'||k==='arrowright'||k==='d'){
+      if(s.subSel===0)meta.settings.shake=!meta.settings.shake;
+      else if(s.subSel===1)meta.settings.damageNums=!meta.settings.damageNums;
+      else if(s.subSel===2)meta.settings.particles=!meta.settings.particles;
+      else if(s.subSel===3)s.mode='main';
+      saveMeta();
+    }
+    else if(k==='escape'||k==='e'||k==='i'||k==='tab'||k==='x')s.mode='main';
+  }else if(s.mode==='weapons'){
+    const owned=allOwnedWep();
+    const order=meta.settings.wepOrder;
+    const cycle=meta.settings.wepCycle;
+    const items=owned.map(w=>WN[w]+(cycle[w]?' [Q-cycle]':' [hidden]'));
+    items.push('Reset to Default','Back');
+    if(k==='arrowup'||k==='w')s.wepSel=Math.max(0,s.wepSel-1);
+    else if(k==='arrowdown'||k==='s')s.wepSel=Math.min(items.length-1,s.wepSel+1);
+    else if(k==='enter'||k===' '||k==='z'){
+      if(s.wepSel<owned.length){
+        cycle[owned[s.wepSel]]=!cycle[owned[s.wepSel]];
+        saveMeta();
+      }else if(s.wepSel===owned.length){
+        meta.settings.wepOrder=[...DEFAULT_WEP_ORDER];
+        meta.settings.wepCycle={...DEFAULT_WEP_CYCLE};
+        saveMeta();
+        say('Weapon order reset',60);
+      }else if(s.wepSel===owned.length+1){
+        s.mode='main';
+      }
+    }
+    else if(k==='arrowright'||k==='d'){
+      if(s.wepSel<owned.length-1){
+        const i=s.wepSel;
+        const idx1=order.indexOf(owned[i]);
+        const idx2=order.indexOf(owned[i+1]);
+        if(idx1>=0&&idx2>=0){[order[idx1],order[idx2]]=[order[idx2],order[idx1]];saveMeta();}
+      }
+    }
+    else if(k==='arrowleft'||k==='a'){
+      if(s.wepSel>0){
+        const i=s.wepSel;
+        const idx1=order.indexOf(owned[i]);
+        const idx2=order.indexOf(owned[i-1]);
+        if(idx1>=0&&idx2>=0){[order[idx1],order[idx2]]=[order[idx2],order[idx1]];saveMeta();}
+      }
+    }
+    else if(k==='escape'||k==='e'||k==='i'||k==='tab'||k==='x')s.mode='main';
+  }
+}
 function menuTap(x,y){
   const items=menuItems();
   for(let i=0;i<items.length;i++){const r=rowRect(i);if(x>=r.x&&x<=r.x+r.w&&y>=r.y&&y<=r.y+r.h){menu.sel=i;act(items[i]);return}}
   if(menu.mode==='inv'&&y>=50&&y<=76){if(x>=440&&x<=545){menu.tab=0;menu.sel=0;return}if(x>=550&&x<=655){menu.tab=1;menu.sel=0;return}}
   if(x>=560&&x<=660&&y>=378&&y<=406)closeMenu();
+  // Settings button in inventory menu
+  if(menu.mode==='inv'&&x>=450&&x<=550&&y>=378&&y<=406){openSettings();return}
 }
 function ringDamage(R,ed,bd,fx){
   const cx=p.x+9,cy=p.y+14;let n=0,bh=false;
@@ -591,6 +736,7 @@ addEventListener('keydown',e=>{
   if(net&&menu&&state==='play'){menuKey(k);return}
   if(net&&k==='escape'&&showMap){showMap=false;return}
   if(state==='help'){state='title';return}
+  if(settingsMenu){settingsKey(k);return}
   if(state==='menu'){menuKey(k);return}
   if(state==='play'&&!pvp&&(k==='e'||k==='i'||k==='tab'))interact();
   if(state==='play'&&k==='q')cycleW(0);
@@ -606,6 +752,20 @@ addEventListener('keydown',e=>{
   if(state==='title')titleKey(k);
   if(state==='clear'&&clearT>40&&(k==='enter'||k===' '))goNext();
   if(k==='p'&&(state==='play'||state==='pause'))state=state==='play'?'pause':'play';
+  // Open settings from title, play, pause
+  if((state==='title'||state==='play'||state==='pause')&&(k==='escape'||k==='o')){
+    if(state==='title')openSettings();
+    else if(state==='play')openSettings();
+    else if(state==='pause')openSettings(true);
+    return;
+  }
+  // Number keys 1-9 for direct weapon switching
+  if(state==='play'&&!pvp&&k>='1'&&k<='9'){
+    const idx=parseInt(k)-1;
+    const w=weps();
+    if(idx<w.length){p.wep=idx;say('Weapon: '+WN[curW()],90);sfx.rest();saveGame()}
+    return;
+  }
 });
 addEventListener('keyup',e=>K[e.key.toLowerCase()]=false);
 addEventListener('blur',()=>{for(const k in K)K[k]=false;if(state==='play'&&!net)state='pause'});
@@ -624,10 +784,27 @@ cv.addEventListener('pointerdown',e=>{initAudio();if(e.pointerType==='touch')tou
   if(state==='ach'){if(achPage===0)achPage=1;else{state='title';achPage=0}return}
   if(state==='title'){const [mx,my]=cpos(e);titleTap(mx,my);return}
   if(state==='clear'){if(clearT>40)goNext();return}
-  if(state==='pause'||state==='map'){state='play';return}
+  if(state==='pause'){
+    const [mx,my]=cpos(e);
+    // Settings button on pause screen
+    if(mx>=VW/2-60&&mx<=VW/2+60&&my>=VH/2+60&&my<=VH/2+92){
+      openSettings(true);
+      return;
+    }
+    state='play';
+    return;
+  }
   if(inMenu()){const [mx,my]=cpos(e);if(net&&net.role==='guest')netSend({t:'mt',x:mx,y:my});else menuTap(mx,my);return}
+  // Settings button click (top-right gear)
+  const [x,y]=cpos(e);
+  if(Math.hypot(x-(VW-40),y-12)<=14+12){
+    if(state==='title')openSettings();
+    else if(state==='play')openSettings();
+    else if(state==='pause')openSettings(true);
+    return;
+  }
   if(!touchMode)return;
-  const [x,y]=cpos(e);const hs=hitB(x,y);if(hs.has('E')){if(net&&net.role==='guest')netSend({t:'ev',e:'shop'});else interact();return}if(hs.has('W')){swapMine();return}
+  const hs=hitB(x,y);if(hs.has('E')){if(net&&net.role==='guest')netSend({t:'ev',e:'shop'});else interact();return}if(hs.has('W')){swapMine();return}
   ptr.set(e.pointerId,hs);refresh();try{cv.setPointerCapture(e.pointerId)}catch(_){}});
 cv.addEventListener('pointermove',e=>{if(ptr.has(e.pointerId)){const [x,y]=cpos(e);ptr.set(e.pointerId,hitB(x,y));refresh()}});
 const upH=e=>{ptr.delete(e.pointerId);refresh()};
@@ -2301,6 +2478,60 @@ function drawMenu(){
   txt('Enter: buy/equip  E: close',372,396,11,'#8ab');
   rr(560,378,100,28,8);ctx.fillStyle='#1c2c44';ctx.fill();ctx.strokeStyle='#4fd1a5';ctx.lineWidth=1.2;ctx.stroke();
   txt('Close',610,397,13,'#fff','center');
+  // Settings button in inventory menu
+  rr(450,378,100,28,8);ctx.fillStyle='#1c2c44';ctx.fill();ctx.strokeStyle='#ffd84a';ctx.lineWidth=1.2;ctx.stroke();
+  txt('SETTINGS \u2699',500,397,13,'#ffd84a','center');
+}
+function drawSettings(){
+  if(!settingsMenu)return;
+  ctx.fillStyle='rgba(2,5,12,.85)';ctx.fillRect(0,0,VW,VH);
+  const g=ctx.createLinearGradient(0,40,0,410);g.addColorStop(0,'#16233a');g.addColorStop(1,'#0a1220');
+  ctx.save();ctx.shadowColor='rgba(255,180,60,.35)';ctx.shadowBlur=24;rr(120,40,560,370,14);ctx.fillStyle=g;ctx.fill();ctx.restore();
+  rr(120,40,560,370,14);ctx.strokeStyle='rgba(255,180,60,.8)';ctx.lineWidth=2;ctx.stroke();
+  rr(122,42,556,38,12);ctx.fillStyle='rgba(255,180,60,.08)';ctx.fill();ctx.strokeStyle='rgba(255,207,138,.35)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(140,81);ctx.lineTo(660,81);ctx.stroke();
+  const s=settingsMenu;
+  txt('SETTINGS',VW/2,72,20,'#ffd84a','center');
+  if(s.mode==='main'){
+    const items=['Gameplay','Weapons','Audio','Visual','Close'];
+    items.forEach((n,i)=>{const y=110+i*50,sel=i===s.sel;rr(160,y,480,40,8);ctx.fillStyle=sel?'rgba(255,180,60,.22)':'rgba(255,255,255,.05)';ctx.fill();if(sel){ctx.strokeStyle='#ffd84a';ctx.lineWidth=1.2;rr(160.5,y+0.5,479,39,8);ctx.stroke();ctx.fillStyle='#ffd84a';ctx.fillRect(162,y+5,3,30)}txt(n,VW/2,y+26,16,sel?'#ffd84a':'#fff','center')});
+    txt('\u2191/\u2193: navigate  Enter: select  Esc: back',VW/2,380,11,'#8ab','center');
+  }else if(s.mode==='gameplay'){
+    const items=['Screen Shake: '+(meta.settings.shake?'ON':'OFF'),'Damage Numbers: '+(meta.settings.damageNums?'ON':'OFF'),'Particles: '+(meta.settings.particles?'ON':'OFF'),'Back'];
+    items.forEach((n,i)=>{const y=110+i*50,sel=i===s.subSel;rr(160,y,480,40,8);ctx.fillStyle=sel?'rgba(255,180,60,.22)':'rgba(255,255,255,.05)';ctx.fill();if(sel){ctx.strokeStyle='#ffd84a';ctx.lineWidth=1.2;rr(160.5,y+0.5,479,39,8);ctx.stroke();ctx.fillStyle='#ffd84a';ctx.fillRect(162,y+5,3,30)}txt(n,VW/2,y+26,16,sel?'#ffd84a':'#fff','center')});
+    txt('\u2190/\u2192 or Enter: toggle  Esc: back',VW/2,380,11,'#8ab','center');
+  }else if(s.mode==='audio'){
+    const items=['Master Volume: '+Math.round(meta.settings.volume*100)+'%','Mute: '+(meta.settings.mute?'ON':'OFF'),'Back'];
+    items.forEach((n,i)=>{const y=110+i*50,sel=i===s.subSel;rr(160,y,480,40,8);ctx.fillStyle=sel?'rgba(255,180,60,.22)':'rgba(255,255,255,.05)';ctx.fill();if(sel){ctx.strokeStyle='#ffd84a';ctx.lineWidth=1.2;rr(160.5,y+0.5,479,39,8);ctx.stroke();ctx.fillStyle='#ffd84a';ctx.fillRect(162,y+5,3,30)}txt(n,VW/2,y+26,16,sel?'#ffd84a':'#fff','center')});
+    txt('\u2190/\u2192: adjust volume  Enter: toggle mute  Esc: back',VW/2,380,11,'#8ab','center');
+  }else if(s.mode==='visual'){
+    const items=['Screen Shake: '+(meta.settings.shake?'ON':'OFF'),'Damage Numbers: '+(meta.settings.damageNums?'ON':'OFF'),'Particles: '+(meta.settings.particles?'ON':'OFF'),'Back'];
+    items.forEach((n,i)=>{const y=110+i*50,sel=i===s.subSel;rr(160,y,480,40,8);ctx.fillStyle=sel?'rgba(255,180,60,.22)':'rgba(255,255,255,.05)';ctx.fill();if(sel){ctx.strokeStyle='#ffd84a';ctx.lineWidth=1.2;rr(160.5,y+0.5,479,39,8);ctx.stroke();ctx.fillStyle='#ffd84a';ctx.fillRect(162,y+5,3,30)}txt(n,VW/2,y+26,16,sel?'#ffd84a':'#fff','center')});
+    txt('\u2190/\u2192 or Enter: toggle  Esc: back',VW/2,380,11,'#8ab','center');
+  }else if(s.mode==='weapons'){
+    const owned=allOwnedWep();
+    const order=meta.settings.wepOrder;
+    const cycle=meta.settings.wepCycle;
+    txt('Owned Weapons (in cycle order):',160,100,14,'#ffd84a');
+    txt('\u2190/\u2192: move up/down in order  Enter: toggle Q-cycle  Esc: back',VW/2,380,11,'#8ab','center');
+    owned.forEach((w,i)=>{
+      const y=125+i*28,sel=i===s.wepSel;
+      const inCycle=cycle[w];
+      const orderIdx=order.indexOf(w);
+      rr(160,y,480,24,6);
+      ctx.fillStyle=sel?'rgba(255,180,60,.22)':'rgba(255,255,255,.05)';ctx.fill();
+      if(sel){ctx.strokeStyle='#ffd84a';ctx.lineWidth=1.2;rr(160.5,y+0.5,479,23,6);ctx.stroke();ctx.fillStyle='#ffd84a';ctx.fillRect(162,y+3,3,18)}
+      ctx.fillStyle=WC[w];ctx.save();ctx.translate(178,y+12);ctx.rotate(.78);ctx.fillRect(-6,-6,12,12);ctx.restore();
+      txt('#'+(orderIdx+1)+' '+WN[w]+(inCycle?'  [Q-cycle]':'  [hidden]'),210,y+17,14,sel?'#ffd84a':inCycle?'#fff':'#888');
+    });
+    const resetY=125+owned.length*28;
+    rr(160,resetY,480,24,6);ctx.fillStyle=s.wepSel===owned.length?'rgba(255,180,60,.22)':'rgba(255,255,255,.05)';ctx.fill();
+    if(s.wepSel===owned.length){ctx.strokeStyle='#ffd84a';ctx.lineWidth=1.2;rr(160.5,resetY+0.5,479,23,6);ctx.stroke();ctx.fillStyle='#ffd84a';ctx.fillRect(162,resetY+3,3,18)}
+    txt('Reset to Default',VW/2,resetY+17,14,s.wepSel===owned.length?'#ffd84a':'#fff','center');
+    const backY=resetY+28;
+    rr(160,backY,480,24,6);ctx.fillStyle=s.wepSel===owned.length+1?'rgba(255,180,60,.22)':'rgba(255,255,255,.05)';ctx.fill();
+    if(s.wepSel===owned.length+1){ctx.strokeStyle='#ffd84a';ctx.lineWidth=1.2;rr(160.5,backY+0.5,479,23,6);ctx.stroke();ctx.fillStyle='#ffd84a';ctx.fillRect(162,backY+3,3,18)}
+    txt('Back',VW/2,backY+17,14,s.wepSel===owned.length+1?'#ffd84a':'#fff','center');
+  }
 }
 function glowAt(x,y,r,col){const g=ctx.createRadialGradient(x,y,1,x,y,r);g.addColorStop(0,col);g.addColorStop(1,'rgba(0,0,0,0)');ctx.fillStyle=g;ctx.fillRect(x-r,y-r,r*2,r*2)}
 function txt(s,x,y,size=16,col='#cfe',align='left'){ctx.fillStyle=col;ctx.font=`bold ${size}px ui-monospace,Menlo,Consolas,monospace`;ctx.textAlign=align;ctx.fillText(s,x,y)}
@@ -2350,6 +2581,8 @@ function draw(){
     if(saved&&saved.level>1)txt('Continue from Level '+saved.level+'   ('+(saved.shards||0)+' shards)',VW/2,310,12,'#7ff','center');
     if((t>>5)%2===0)txt(saved&&saved.level>1?'TAP / PRESS SPACE TO CONTINUE':'TAP / PRESS SPACE TO BEGIN',VW/2,332,16,'#fff','center');
     {const on=true;rr(VW/2-110,408,220,24,12);ctx.fillStyle='rgba(10,20,36,.8)';ctx.fill();ctx.strokeStyle=on?'#7fe':'#567';ctx.lineWidth=1.2;ctx.stroke();txt('ONLINE 2-PLAYER  (L)',VW/2,424,12,on?'#7fe':'#789','center')}
+    // Settings button on title screen
+    rr(VW-110,408,100,24,12);ctx.fillStyle='rgba(10,20,36,.8)';ctx.fill();ctx.strokeStyle='#ffd84a';ctx.lineWidth=1.2;ctx.stroke();txt('SETTINGS \u2699',VW-60,424,12,'#ffd84a','center');
     txt('H: controls    T: achievements    O: sound '+(mute?'OFF':'ON')+'    gamepad supported',VW/2,358,11,'#8ab','center');
     txt('Earn gold every level (flawless/fast/combo bonuses) to unlock heroes. Progress saves automatically.'+(saved&&saved.level>1?'  N: new run.':''),VW/2,388,10,'#789','center');
     if(state==='help'){ctx.fillStyle='rgba(0,0,0,.97)';ctx.fillRect(0,0,VW,VH);txt('CONTROLS',VW/2,36,22,'#ffcf8a','center');
@@ -2433,6 +2666,13 @@ function draw(){
   txt(spReady?CHAR().name+' SPECIAL (L)':CHAR().name+' SPECIAL',124,87,10,spReady?'#ffd27a':'#c9b6ff');
   if(!pvp)txt('GOLD '+goldNow(),16,96,12,'#ffd84a');
   if(!pvp&&combo>=2){const sc=1+Math.min(.5,combo*.03);txt('x'+combo+' COMBO',16,116,Math.round(13*sc),combo>=10?'#ff9a4a':'#ffd27a');ctx.fillStyle='#fff3';ctx.fillRect(16,120,Math.min(100,comboT/2),3)}
+  // Settings button in top-right
+  const setBtnX=VW-40,setBtnY=12,setBtnR=14;
+  ctx.save();ctx.globalAlpha=.8;
+  ctx.fillStyle=tb.SET?'#fff':'rgba(120,160,200,.3)';ctx.beginPath();ctx.arc(setBtnX,setBtnY,setBtnR,0,6.28);ctx.fill();
+  ctx.strokeStyle='#4fd1a5';ctx.lineWidth=2;ctx.beginPath();ctx.arc(setBtnX,setBtnY,setBtnR,0,6.28);ctx.stroke();
+  ctx.fillStyle='#ffd84a';ctx.font='bold 14px ui-monospace,monospace';ctx.textAlign='center';ctx.fillText('\u2699',setBtnX,setBtnY+5);
+  ctx.restore();
   if(P.length>1){const q=P[1-me];
     for(let i=0;i<q.max;i++){ctx.beginPath();ctx.arc(VW-24-i*18,92,6,0,6.28);if(i<q.hp){ctx.fillStyle=q.dead>0?'#555':'#fa9';ctx.fill()}else{ctx.strokeStyle='#654';ctx.lineWidth=2;ctx.stroke()}}
     ctx.fillStyle='#2a1a10';ctx.fillRect(VW-114,102,100,6);ctx.fillStyle='#ff7a3a';ctx.fillRect(VW-114,102,q.ember,6);
@@ -2463,10 +2703,11 @@ function draw(){
     ctx.globalAlpha=1;
   }
   if(menu&&inMenu())drawMenu();
+  if(settingsMenu)drawSettings();
   if(state==='map'||showMap)drawMapOverlay();
   else if(!pvp&&!inMenu()&&(state==='play'||state==='pause'))drawMiniMap();
   if(net)drawNetTag();
-  if(state==='pause'){ctx.fillStyle='#000a';ctx.fillRect(0,0,VW,VH);txt('PAUSED',VW/2,VH/2,40,'#fff','center');txt('press P or tap to resume'+(rmode?'    Esc: quit run':''),VW/2,VH/2+30,14,'#8ab','center')}
+  if(state==='pause'){ctx.fillStyle='#000a';ctx.fillRect(0,0,VW,VH);txt('PAUSED',VW/2,VH/2,40,'#fff','center');txt('press P or tap to resume'+(rmode?'    Esc: quit run':''),VW/2,VH/2+30,14,'#8ab','center');rr(VW/2-60,VH/2+60,120,32,8);ctx.fillStyle='rgba(10,20,36,.8)';ctx.fill();ctx.strokeStyle='#ffd84a';ctx.lineWidth=1.2;ctx.stroke();txt('SETTINGS \u2699',VW/2,VH/2+80,14,'#ffd84a','center')}
   if(state==='rushend'){ctx.fillStyle='rgba(0,0,0,.82)';ctx.fillRect(0,0,VW,VH);txt(rmode==='rush'?'RUSH OVER':'DAILY OVER',VW/2,150,46,'#ffcf8a','center');txt(rmode==='rush'?rushN+' boss'+(rushN===1?'':'es')+' defeated':'Reached level '+level,VW/2,196,18,'#fff','center');txt('+'+runGold+' gold',VW/2,224,16,'#ffd27a','center');txt('Best: '+(rmode==='rush'?(meta.rush|0)+' bosses':(meta.daily?meta.daily.best:0)+' levels today'),VW/2,250,13,'#9ef','center');if((t>>5)%2===0)txt('press Enter',VW/2,300,14,'#fff','center')}
   if(pvp&&pvpKO>0&&state==='play'){ctx.fillStyle='rgba(255,255,255,'+Math.min(.25,pvpKO/400)+')';ctx.fillRect(0,0,VW,VH);txt('K.O.!',VW/2,VH/2-10,64,'#fff','center');txt(CHARS[P[pvpW].chr].name+' (P'+(pvpW+1)+') takes the round',VW/2,VH/2+24,16,'#ffd27a','center')}
   if(state==='pvpend'){ctx.fillStyle='rgba(0,0,0,.8)';ctx.fillRect(0,0,VW,VH);txt('P'+(pvpW+1)+' WINS!',VW/2,190,54,'#ffcf8a','center');txt(CHARS[P[pvpW].chr].name+' takes the match  '+pvpWins[0]+' - '+pvpWins[1],VW/2,230,16,'#fff','center');if((t>>5)%2===0)txt('ENTER / TAP: back to title',VW/2,310,16,'#7ff','center')}
